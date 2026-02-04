@@ -19,7 +19,7 @@
         <div class="image-container" ref="imageContainerRef">
           <div class="image-wrapper" ref="imageWrapperRef">
             <img 
-              src="../assets/侨批图片.jpeg" 
+              src="../assets/qiaopi1.jpg" 
               alt="侨批"
               class="qiaopi-image"
               ref="imageRef"
@@ -159,7 +159,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { annotationData as mockAnnotationData, entityTypes } from '../mockData.js'
+import { annotationData as mockAnnotationData, entityTypes } from '../mockData1.js'
 
 const annotationData = ref(mockAnnotationData)
 const selectedLine = ref(null)
