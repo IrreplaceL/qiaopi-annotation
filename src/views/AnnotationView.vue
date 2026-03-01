@@ -4,7 +4,39 @@
     <header class="toolbar">
       <div class="toolbar-title">侨批文献标注系统</div>
       <div class="toolbar-actions">
-        <button class="btn btn-primary" @click="save">保存标注</button>
+        <input 
+          type="file" 
+          ref="fileInputRef" 
+          @change="handleFileChange" 
+          accept="image/*"
+          style="display: none;"
+        />
+        <button class="btn btn-secondary" @click="triggerFileUpload">上传图片</button>
+        <div v-if="imageUrl" class="zoom-controls">
+          <button class="btn btn-icon" @click="zoomOut" title="缩小">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/>
+            </svg>
+          </button>
+          <span class="zoom-level">{{ Math.round(zoomLevel * 100) }}%</span>
+          <button class="btn btn-icon" @click="zoomIn" title="放大">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+            </svg>
+          </button>
+          <button class="btn btn-icon" @click="resetZoom" title="重置">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+              <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+            </svg>
+          </button>
+        </div>
+        <button class="btn btn-icon" @click="toggleFullscreen" title="全屏">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/>
+          </svg>
+        </button>
+        <button class="btn btn-primary" @click="save" :disabled="!annotationData.length">保存标注</button>
       </div>
     </header>
 
@@ -16,15 +48,31 @@
           <h3>侨批图像</h3>
           <span class="text-direction">{{ textDirection === 'vertical' ? '竖排文字' : '横排文字' }}</span>
         </div>
-        <div class="image-container" ref="imageContainerRef">
-          <div class="image-wrapper" ref="imageWrapperRef">
+        <div class="image-container" 
+             ref="imageContainerRef" 
+             @wheel="handleWheel"
+             @mousedown="handleMouseDown"
+             @mousemove="handleMouseMove"
+             @mouseup="handleMouseUp"
+             @mouseleave="handleMouseLeave"
+             :class="{ dragging: isDragging }">
+          <div class="image-wrapper" ref="imageWrapperRef" :style="{ transform: `scale(${zoomLevel})` }">
             <img 
-              src="../assets/qiaopi1.jpg" 
+              v-if="imageUrl"
+              :src="imageUrl" 
               alt="侨批"
               class="qiaopi-image"
               ref="imageRef"
               @load="onImageLoad"
             />
+            <div v-else class="upload-placeholder" @click="triggerFileUpload">
+              <div class="placeholder-content">
+                <svg class="placeholder-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                <p class="placeholder-text">点击上传侨批图像</p>
+              </div>
+            </div>
             <svg 
               v-if="imageLoaded"
               class="bbox-overlay"
@@ -75,35 +123,53 @@
           </div>
         </div>
         
-        <!-- 文本显示区域 -->
-        <div class="text-list-container" ref="textListRef">
+        <!-- 文本显示区域：使用坐标布局 -->
+        <div class="text-canvas-container" 
+             ref="textCanvasRef" 
+             @wheel="handleWheel"
+             @mousedown="handleTextMouseDown"
+             @mousemove="handleTextMouseMove"
+             @mouseup="handleTextMouseUp"
+             @mouseleave="handleTextMouseLeave"
+             :class="{ dragging: isTextDragging }">
           <div 
-            v-for="item in annotationData" 
-            :key="item.line_id"
-            :data-line-id="item.line_id"
-            :class="['text-line-item', { 'line-active': highlightedLineId === item.line_id }]"
-            @click="handleLineClick(item)"
-            @mouseenter="handleLineHover(item.line_id)"
-            @mouseleave="handleLineLeave"
+            class="text-canvas-wrapper" 
+            :style="{ 
+              width: imageDisplayWidth * zoomLevel + 'px', 
+              height: imageDisplayHeight * zoomLevel + 'px',
+              transform: `scale(${zoomLevel})`,
+              transformOrigin: '0 0'
+            }"
           >
-            <div class="line-header">
-              <span class="line-number-badge">第 {{ item.line_id }} 行</span>
-              <span class="line-score">置信度: {{ (item.score * 100).toFixed(1) }}%</span>
-            </div>
-            <div :class="['line-text', textDirection === 'vertical' ? 'vertical-text' : 'horizontal-text']">
-              <span
-                v-for="(char, index) in item.corrected_text.split('')"
-                :key="index"
-                :class="['text-char', getCharClass(item, index)]"
-                :style="getCharStyle(item, index)"
-                :title="getCharTitle(item, index)"
-              >
-                {{ char }}
-              </span>
-            </div>
-            <div v-if="item.ocr_text !== item.corrected_text" class="ocr-diff">
-              <span class="ocr-label">OCR:</span>
-              <span class="ocr-text">{{ item.ocr_text }}</span>
+            <div
+              v-for="item in annotationData"
+              :key="item.line_id"
+              :data-line-id="item.line_id"
+              :class="['text-canvas-item', { 'item-active': highlightedLineId === item.line_id }]"
+              :style="{
+                left: item.bbox[0] * scaleRatio + 'px',
+                top: item.bbox[1] * scaleRatio + 'px',
+                width: (item.bbox[2] - item.bbox[0]) * scaleRatio + 'px',
+                height: (item.bbox[3] - item.bbox[1]) * scaleRatio + 'px'
+              }"
+              @click="handleLineClick(item)"
+              @mouseenter="handleLineHover(item.line_id)"
+              @mouseleave="handleLineLeave"
+            >
+              <div class="canvas-item-content">
+                <span class="item-number">{{ item.line_id }}</span>
+                <div :class="['item-text', textDirection === 'vertical' ? 'vertical-text' : 'horizontal-text']">
+                  <span
+                    v-for="(char, index) in item.corrected_text.split('')"
+                    :key="index"
+                    :class="['text-char', getCharClass(item, index)]"
+                    :style="getCharStyle(item, index)"
+                    :title="getCharTitle(item, index)"
+                  >
+                    {{ char }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -159,27 +225,40 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { annotationData as mockAnnotationData, entityTypes } from '../mockData1.js'
+import { entityTypes } from '../mockData1.js'
+import { processImage, saveAnnotation } from '../http/api.js'
 
-const annotationData = ref(mockAnnotationData)
+// 响应式数据
+const annotationData = ref([])
 const selectedLine = ref(null)
 const highlightedLineId = ref(null)
 const imageRef = ref(null)
 const imageWrapperRef = ref(null)
 const imageContainerRef = ref(null)
 const textListRef = ref(null)
+const textCanvasRef = ref(null)
+const fileInputRef = ref(null)
 const imageLoaded = ref(false)
 const imageWidth = ref(0)
 const imageHeight = ref(0)
 const imageDisplayWidth = ref(0)
 const imageDisplayHeight = ref(0)
 const scaleRatio = ref(1)
+const imageUrl = ref('')
+const isUploading = ref(false)
+const zoomLevel = ref(1)
+const isFullscreen = ref(false)
+const isDragging = ref(false)
+const dragStart = ref({ x: 0, y: 0 })
+const scrollStart = ref({ x: 0, y: 0 })
+const isTextDragging = ref(false)
+const textDragStart = ref({ x: 0, y: 0 })
+const textScrollStart = ref({ x: 0, y: 0 })
 
-// 判断文字方向：根据bbox的宽高比判断
+// 计算属性：判断文字方向
 const textDirection = computed(() => {
   if (annotationData.value.length === 0) return 'vertical'
   
-  // 计算大多数文本框的宽高比
   let verticalCount = 0
   let horizontalCount = 0
   
@@ -189,7 +268,6 @@ const textDirection = computed(() => {
       const height = item.bbox[3] - item.bbox[1]
       const ratio = height / width
       
-      // 高度大于宽度的2倍认为是竖排
       if (ratio > 2) {
         verticalCount++
       } else {
@@ -201,14 +279,54 @@ const textDirection = computed(() => {
   return verticalCount > horizontalCount ? 'vertical' : 'horizontal'
 })
 
-// 图片加载完成
+// 文件上传相关
+const triggerFileUpload = () => {
+  fileInputRef.value?.click()
+}
+
+const handleFileChange = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  if (!file.type.startsWith('image/')) {
+    alert('请选择图片文件')
+    return
+  }
+
+  imageUrl.value = URL.createObjectURL(file)
+  imageLoaded.value = false
+  annotationData.value = []
+  selectedLine.value = null
+  highlightedLineId.value = null
+
+  await uploadAndProcess(file)
+  event.target.value = ''
+}
+
+const uploadAndProcess = async (file) => {
+  isUploading.value = true
+  
+  try {
+    const data = await processImage(file)
+    annotationData.value = data
+    console.log('标注数据加载成功：', annotationData.value)
+  } catch (error) {
+    console.error('上传处理失败：', error)
+    alert(`上传处理失败：${error.message}`)
+    imageUrl.value = ''
+    annotationData.value = []
+  } finally {
+    isUploading.value = false
+  }
+}
+
+// 图片加载相关
 const onImageLoad = () => {
   if (imageRef.value) {
     updateImageDimensions()
   }
 }
 
-// 更新图片尺寸和缩放比例
 const updateImageDimensions = () => {
   if (imageRef.value) {
     const naturalWidth = imageRef.value.naturalWidth
@@ -225,29 +343,18 @@ const updateImageDimensions = () => {
   }
 }
 
-onMounted(() => {
-  // 监听窗口大小变化
-  window.addEventListener('resize', () => {
-    if (imageLoaded.value) {
-      updateImageDimensions()
-    }
-  })
-})
-
-// 获取字符所属实体类型
+// 实体标注相关
 const getEntityForChar = (item, index) => {
   return item.entities.find(entity => 
     index >= entity.start && index < entity.end
   )
 }
 
-// 获取字符的CSS类
 const getCharClass = (item, index) => {
   const entity = getEntityForChar(item, index)
   return entity ? 'highlighted' : ''
 }
 
-// 获取字符的样式
 const getCharStyle = (item, index) => {
   const entity = getEntityForChar(item, index)
   if (entity) {
@@ -261,7 +368,6 @@ const getCharStyle = (item, index) => {
   return {}
 }
 
-// 获取字符的提示信息
 const getCharTitle = (item, index) => {
   const entity = getEntityForChar(item, index)
   if (entity) {
@@ -271,63 +377,55 @@ const getCharTitle = (item, index) => {
   return ''
 }
 
-// 获取实体类型颜色
 const getEntityColor = (type) => {
   const entityType = entityTypes.find(t => t.type === type)
   return entityType?.color || '#999'
 }
 
-// 处理bbox点击
+// 交互事件处理
 const handleBboxClick = (item) => {
   selectedLine.value = item
   highlightedLineId.value = item.line_id
   scrollToLine(item.line_id)
 }
 
-// 处理文本行点击
 const handleLineClick = (item) => {
   selectedLine.value = item
   highlightedLineId.value = item.line_id
 }
 
-// 处理bbox悬停
 const handleBboxHover = (lineId) => {
   if (!selectedLine.value) {
     highlightedLineId.value = lineId
   }
 }
 
-// 处理bbox离开
 const handleBboxLeave = () => {
   if (!selectedLine.value) {
     highlightedLineId.value = null
   }
 }
 
-// 处理文本行悬停
 const handleLineHover = (lineId) => {
   if (!selectedLine.value) {
     highlightedLineId.value = lineId
   }
 }
 
-// 处理文本行离开
 const handleLineLeave = () => {
   if (!selectedLine.value) {
     highlightedLineId.value = null
   }
 }
 
-// 处理图片点击（空白区域）
 const handleImageClick = () => {
   // 点击空白区域不做处理
 }
 
-// 滚动到指定行
 const scrollToLine = (lineId) => {
   nextTick(() => {
-    if (textListRef.value) {
-      const lineElement = textListRef.value.querySelector(`[data-line-id="${lineId}"]`)
+    if (textCanvasRef.value) {
+      const lineElement = textCanvasRef.value.querySelector(`[data-line-id="${lineId}"]`)
       if (lineElement) {
         lineElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }
@@ -335,477 +433,170 @@ const scrollToLine = (lineId) => {
   })
 }
 
-// 更新文本
+// 缩放控制
+const zoomIn = () => {
+  if (zoomLevel.value < 3) {
+    zoomLevel.value = Math.min(3, zoomLevel.value + 0.25)
+  }
+}
+
+const zoomOut = () => {
+  if (zoomLevel.value > 0.5) {
+    zoomLevel.value = Math.max(0.5, zoomLevel.value - 0.25)
+  }
+}
+
+const resetZoom = () => {
+  zoomLevel.value = 1
+}
+
+// 鼠标滚轮缩放
+const handleWheel = (event) => {
+  if (!imageUrl.value) return
+  
+  event.preventDefault()
+  
+  const delta = -event.deltaY / 1000
+  const newZoom = zoomLevel.value + delta
+  
+  // 限制缩放范围
+  zoomLevel.value = Math.max(0.5, Math.min(3, newZoom))
+}
+
+// 鼠标拖动功能
+const handleMouseDown = (event) => {
+  if (!imageUrl.value || event.button !== 0) return
+  
+  isDragging.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY
+  }
+  
+  if (imageContainerRef.value) {
+    scrollStart.value = {
+      x: imageContainerRef.value.scrollLeft,
+      y: imageContainerRef.value.scrollTop
+    }
+  }
+}
+
+const handleMouseMove = (event) => {
+  if (!isDragging.value || !imageContainerRef.value) return
+  
+  const deltaX = dragStart.value.x - event.clientX
+  const deltaY = dragStart.value.y - event.clientY
+  
+  imageContainerRef.value.scrollLeft = scrollStart.value.x + deltaX
+  imageContainerRef.value.scrollTop = scrollStart.value.y + deltaY
+}
+
+const handleMouseUp = () => {
+  isDragging.value = false
+}
+
+const handleMouseLeave = () => {
+  isDragging.value = false
+}
+
+// 右侧文本区域拖动功能
+const handleTextMouseDown = (event) => {
+  if (event.button !== 0) return
+  
+  // 如果点击的是文本项，不启动拖动
+  if (event.target.closest('.text-canvas-item')) return
+  
+  isTextDragging.value = true
+  textDragStart.value = {
+    x: event.clientX,
+    y: event.clientY
+  }
+  
+  if (textCanvasRef.value) {
+    textScrollStart.value = {
+      x: textCanvasRef.value.scrollLeft,
+      y: textCanvasRef.value.scrollTop
+    }
+  }
+}
+
+const handleTextMouseMove = (event) => {
+  if (!isTextDragging.value || !textCanvasRef.value) return
+  
+  const deltaX = textDragStart.value.x - event.clientX
+  const deltaY = textDragStart.value.y - event.clientY
+  
+  textCanvasRef.value.scrollLeft = textScrollStart.value.x + deltaX
+  textCanvasRef.value.scrollTop = textScrollStart.value.y + deltaY
+}
+
+const handleTextMouseUp = () => {
+  isTextDragging.value = false
+}
+
+const handleTextMouseLeave = () => {
+  isTextDragging.value = false
+}
+
+// 全屏控制
+const toggleFullscreen = async () => {
+  const container = document.querySelector('.annotation-container')
+  
+  if (!document.fullscreenElement) {
+    try {
+      await container.requestFullscreen()
+      isFullscreen.value = true
+    } catch (err) {
+      console.error('无法进入全屏模式:', err)
+    }
+  } else {
+    try {
+      await document.exitFullscreen()
+      isFullscreen.value = false
+    } catch (err) {
+      console.error('无法退出全屏模式:', err)
+    }
+  }
+}
+
+// 编辑功能
 const updateText = () => {
   // 文本更新后需要重新计算实体位置
 }
 
-// 更新实体
 const updateEntities = () => {
   // 实体类型更新
 }
 
-// 删除实体
 const deleteEntity = (index) => {
   if (selectedLine.value) {
     selectedLine.value.entities.splice(index, 1)
   }
 }
 
-// 保存标注结果
-const save = () => {
-  console.log('保存标注结果：', JSON.stringify(annotationData.value, null, 2))
-  alert('标注结果已保存到控制台')
+const save = async () => {
+  try {
+    await saveAnnotation(annotationData.value)
+    alert('标注结果已保存')
+  } catch (error) {
+    alert('保存失败：' + error.message)
+  }
 }
+
+// 生命周期
+onMounted(() => {
+  window.addEventListener('resize', () => {
+    if (imageLoaded.value) {
+      updateImageDimensions()
+    }
+  })
+  
+  // 监听全屏变化
+  document.addEventListener('fullscreenchange', () => {
+    isFullscreen.value = !!document.fullscreenElement
+  })
+})
 </script>
 
-<style scoped>
-* {
-  box-sizing: border-box;
-}
+<style scoped src="../styles/annotation.css"></style>
 
-.annotation-container {
-  width: 100%;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: #f5f5f5;
-}
-
-/* 工具栏 */
-.toolbar {
-  height: 56px;
-  background: #1f2937;
-  color: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 24px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  z-index: 10;
-}
-
-.toolbar-title {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.toolbar-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: #3b82f6;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #2563eb;
-}
-
-/* 主内容区 */
-.main-content {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-/* 图像面板和标注面板等宽 */
-.image-panel,
-.annotation-panel {
-  width: 50%;
-  background: white;
-  display: flex;
-  flex-direction: column;
-}
-
-.image-panel {
-  border-right: 1px solid #e5e7eb;
-}
-
-.panel-header {
-  padding: 16px 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fafafa;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.text-direction {
-  font-size: 13px;
-  color: #6b7280;
-  background: #e5e7eb;
-  padding: 4px 12px;
-  border-radius: 12px;
-}
-
-.entity-types {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.entity-tag {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.image-container {
-  flex: 1;
-  overflow: auto;
-  padding: 24px;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  background: #f9fafb;
-}
-
-.image-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.qiaopi-image {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.bbox-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: all;
-}
-
-.bbox-rect {
-  fill: rgba(59, 130, 246, 0.1);
-  stroke: #3b82f6;
-  stroke-width: 2;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.bbox-rect:hover {
-  fill: rgba(59, 130, 246, 0.25);
-  stroke: #2563eb;
-  stroke-width: 3;
-}
-
-.bbox-rect.bbox-active {
-  fill: rgba(239, 68, 68, 0.2);
-  stroke: #ef4444;
-  stroke-width: 3;
-}
-
-.bbox-label {
-  fill: #3b82f6;
-  font-size: 14px;
-  font-weight: 600;
-  pointer-events: none;
-  user-select: none;
-}
-
-/* 文本列表容器 */
-.text-list-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.text-line-item {
-  margin-bottom: 16px;
-  padding: 16px;
-  background: #f9fafb;
-  border: 2px solid #e5e7eb;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.text-line-item:hover {
-  border-color: #3b82f6;
-  background: #eff6ff;
-}
-
-.text-line-item.line-active {
-  border-color: #ef4444;
-  background: #fef2f2;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
-}
-
-.line-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.line-number-badge {
-  background: #3b82f6;
-  color: white;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.line-active .line-number-badge {
-  background: #ef4444;
-}
-
-.line-score {
-  font-size: 12px;
-  color: #6b7280;
-  background: white;
-  padding: 4px 10px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-}
-
-.line-text {
-  font-size: 20px;
-  font-family: "KaiTi", "楷体", "SimSun", serif;
-  line-height: 1.8;
-  margin-bottom: 8px;
-}
-
-.line-text.vertical-text {
-  writing-mode: vertical-rl;
-  display: inline-block;
-}
-
-.line-text.horizontal-text {
-  writing-mode: horizontal-tb;
-}
-
-.text-char {
-  padding: 3px 4px;
-  transition: all 0.2s;
-  border-radius: 3px;
-  border-left: 3px solid transparent;
-  border-top: 3px solid transparent;
-  color: #1f2937;
-}
-
-.text-char.highlighted {
-  font-weight: 600;
-}
-
-.vertical-text .text-char.highlighted {
-  border-left: 3px solid;
-  border-top: none;
-}
-
-.horizontal-text .text-char.highlighted {
-  border-top: 3px solid;
-  border-left: none;
-}
-
-.ocr-diff {
-  font-size: 13px;
-  color: #6b7280;
-  padding: 8px 12px;
-  background: white;
-  border-radius: 6px;
-  border: 1px solid #e5e7eb;
-}
-
-.ocr-label {
-  font-weight: 600;
-  color: #ef4444;
-  margin-right: 8px;
-}
-
-.ocr-text {
-  font-family: "SimSun", serif;
-}
-
-/* 编辑面板 */
-.edit-panel {
-  position: absolute;
-  right: 24px;
-  top: 80px;
-  width: 350px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-}
-
-.edit-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #f9fafb;
-  border-radius: 8px 8px 0 0;
-}
-
-.edit-header h4 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: #6b7280;
-  line-height: 1;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-close:hover {
-  color: #1f2937;
-}
-
-.edit-body {
-  padding: 20px;
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group:last-child {
-  margin-bottom: 0;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.text-display {
-  padding: 10px 12px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  font-size: 14px;
-  font-family: "SimSun", serif;
-  color: #6b7280;
-}
-
-.form-control {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  font-size: 14px;
-  font-family: "SimSun", serif;
-  transition: border-color 0.2s;
-}
-
-.form-control:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.entities-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.entity-item {
-  padding: 12px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-left: 4px solid;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.entity-text {
-  flex: 1;
-  font-weight: 600;
-  font-size: 14px;
-  color: #1f2937;
-  font-family: "SimSun", serif;
-}
-
-.entity-type-select {
-  padding: 6px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  background: white;
-}
-
-.btn-delete {
-  padding: 6px 12px;
-  background: #ef4444;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-delete:hover {
-  background: #dc2626;
-}
-
-/* 滚动条样式 */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
-}
-</style>
-}
